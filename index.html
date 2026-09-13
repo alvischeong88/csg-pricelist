@@ -301,7 +301,7 @@
 
   // persistSession: false — this app doesn't use browser storage, so admin
   // needs to log in again after a page refresh. That's an intentional trade-off.
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false }
   });
 
@@ -357,7 +357,7 @@
   }
 
   async function loadProjects() {
-    const { data, error } = await supabase.from('projects').select('id,name').order('created_at', { ascending: true });
+    const { data, error } = await supabaseClient.from('projects').select('id,name').order('created_at', { ascending: true });
     if (error) {
       content.innerHTML = `<div class="empty-state"><p>Could not reach Supabase (${error.message}). Check that SUPABASE_URL and SUPABASE_ANON_KEY are set correctly.</p></div>`;
       return;
@@ -384,7 +384,7 @@
 
   async function loadUnits() {
     content.innerHTML = '<p class="demo-note" style="border:none;padding:0;">Loading units…</p>';
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('units')
       .select('*, purchasers(*)')
       .eq('project_id', currentProjectId)
@@ -617,7 +617,7 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Saving…';
       try {
-        const { data: updated, error: updateErr } = await supabase
+        const { data: updated, error: updateErr } = await supabaseClient
           .from('units')
           .update({
             status: 'booked',
@@ -643,7 +643,7 @@
           phone: p.phone,
           email: p.email || null
         }));
-        const { error: purchErr } = await supabase.from('purchasers').insert(purchasersPayload);
+        const { error: purchErr } = await supabaseClient.from('purchasers').insert(purchasersPayload);
         if (purchErr) throw new Error(purchErr.message);
 
         closeModal();
@@ -684,15 +684,15 @@
       const newStatus = document.getElementById('f_status').value;
       try {
         if (newStatus === 'available') {
-          const { error: delErr } = await supabase.from('purchasers').delete().eq('unit_id', unit.id);
+          const { error: delErr } = await supabaseClient.from('purchasers').delete().eq('unit_id', unit.id);
           if (delErr) throw new Error(delErr.message);
-          const { error: updErr } = await supabase.from('units').update({
+          const { error: updErr } = await supabaseClient.from('units').update({
             status: 'available', deposit: null, booking_date: null,
             emergency_contact: null, purchase_method: null
           }).eq('id', unit.id);
           if (updErr) throw new Error(updErr.message);
         } else {
-          const { error: updErr } = await supabase.from('units').update({ status: newStatus }).eq('id', unit.id);
+          const { error: updErr } = await supabaseClient.from('units').update({ status: newStatus }).eq('id', unit.id);
           if (updErr) throw new Error(updErr.message);
         }
         closeModal();
@@ -731,7 +731,7 @@
       e.preventDefault();
       const email = document.getElementById('adminEmail').value;
       const password = document.getElementById('adminPassword').value;
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
       if (error) {
         document.getElementById('adminError').style.display = 'block';
         document.getElementById('adminPassword').value = '';
@@ -818,7 +818,7 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Saving…';
       try {
-        const { data: project, error: projErr } = await supabase
+        const { data: project, error: projErr } = await supabaseClient
           .from('projects')
           .insert({ name: name || 'Untitled project' })
           .select()
@@ -832,7 +832,7 @@
           size: u.size,
           status: 'available'
         }));
-        const { error: unitsErr } = await supabase.from('units').insert(unitsPayload);
+        const { error: unitsErr } = await supabaseClient.from('units').insert(unitsPayload);
         if (unitsErr) throw new Error(unitsErr.message);
 
         currentProjectId = project.id;
