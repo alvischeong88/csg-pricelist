@@ -312,7 +312,7 @@
           const meta = STATUS_META[unit.status] || STATUS_META.available;
           const priceStr = fmtPrice(unit.price);
           const div = document.createElement('div');
-          div.className = 'unit' + (unit.status !== 'available' ? ' is-set' : '');
+          div.className = 'unit is-set';
           div.style.setProperty('--stat-color', meta.color);
           div.style.setProperty('--stat-bg', meta.bg);
           div.innerHTML = `

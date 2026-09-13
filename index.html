@@ -493,7 +493,7 @@
           btn.className = 'unit';
           btn.style.setProperty('--stat-color', meta.color);
           btn.style.setProperty('--stat-bg', meta.bg);
-          if (unit.status !== 'available') btn.classList.add('is-set');
+          btn.classList.add('is-set');
           const priceStr = fmtPrice(unit.price);
           btn.innerHTML = `
             <div class="code">${unit.code}</div>
@@ -853,7 +853,7 @@
         <div class="field">
           <label>Price list (.xlsx or .csv)</label>
           <input id="priceFile" type="file" accept=".xlsx,.xls,.csv" required>
-          <p class="file-hint">Expects a column for unit number and a column for price (size is optional). Column names are matched automatically.</p>
+          <p class="file-hint">Expects a column for unit number and a column for price (size, block, and status are all optional). A "Status" column with values like Available, Booked, SPA Signed, Not Available, or Dev Unit is read automatically. Multiple sheets are treated as separate blocks. Column names are matched automatically.</p>
         </div>
         <div class="modal-actions">
           <button type="button" class="ghost" id="cancelAddBtn">Cancel</button>
@@ -881,12 +881,27 @@
     return String(sheetName).trim();
   }
 
+  // Maps common status text from a price list ("Sold", "SPA Signed", "Not Available",
+  // etc.) to one of the board's 5 status keys. Order matters — check the more
+  // specific "not available" before the shorter "available" match.
+  function normalizeStatus(raw) {
+    if (!raw) return 'available';
+    const s = String(raw).toLowerCase().trim();
+    if (s.includes('not available') || s.includes('unavailable') || s.includes('withdraw')) return 'unavailable';
+    if (s.includes('dev unit') || s.includes('dev-unit') || s.includes('developer')) return 'devunit';
+    if (s.includes('spa') || (s.includes('sign') && s.includes('stamp'))) return 'spa';
+    if (s.includes('book') || s.includes('sold') || s.includes('reserve')) return 'booked';
+    if (s.includes('available')) return 'available';
+    return 'available';
+  }
+
   function parseSheetUnits(rows) {
     const headers = rows[0] || [];
     const unitCol = findCol(headers, ['unit']);
     const priceCol = findCol(headers, ['price']);
     const sizeCol = findCol(headers, ['size', 'sq ft', 'sqft', 'area']);
     const blockCol = findCol(headers, ['block']);
+    const statusCol = findCol(headers, ['status']);
 
     const units = [];
     for (let r = 1; r < rows.length; r++) {
@@ -898,7 +913,8 @@
         code: String(code),
         price: priceCol >= 0 ? row[priceCol] : (row[1] || null),
         size: sizeCol >= 0 ? row[sizeCol] : null,
-        block: blockCol >= 0 ? row[blockCol] : null
+        block: blockCol >= 0 ? row[blockCol] : null,
+        status: statusCol >= 0 ? normalizeStatus(row[statusCol]) : 'available'
       });
     }
     return units;
@@ -932,7 +948,8 @@
               units.push({
                 code: alreadyPrefixed ? u.code : `${block}-${u.code}`,
                 price: u.price,
-                size: u.size
+                size: u.size,
+                status: u.status
               });
             });
           });
@@ -944,9 +961,9 @@
             if (u.block) {
               const block = String(u.block).trim().toUpperCase();
               const alreadyPrefixed = new RegExp('^' + block + '-', 'i').test(u.code);
-              return { code: alreadyPrefixed ? u.code : `${block}-${u.code}`, price: u.price, size: u.size };
+              return { code: alreadyPrefixed ? u.code : `${block}-${u.code}`, price: u.price, size: u.size, status: u.status };
             }
-            return { code: u.code, price: u.price, size: u.size };
+            return { code: u.code, price: u.price, size: u.size, status: u.status };
           });
         }
       } catch (err) {
@@ -970,7 +987,7 @@
           code: u.code,
           price: u.price,
           size: u.size,
-          status: 'available'
+          status: u.status || 'available'
         }));
         const { error: unitsErr } = await supabaseClient.from('units').insert(unitsPayload);
         if (unitsErr) throw new Error(unitsErr.message);
