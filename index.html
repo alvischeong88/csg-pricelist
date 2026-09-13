@@ -105,6 +105,15 @@
   }
   .empty-state button{ margin-top: 14px; }
 
+  .block-section{ margin-bottom: 8px; }
+  .block-heading{
+    font-family: 'Newsreader', serif;
+    font-size: 22px;
+    font-weight: 500;
+    margin: 0 0 16px;
+    color: var(--ink);
+  }
+
   .floor-section{ margin-bottom: 28px; }
   .floor-heading{
     font-family: 'Newsreader', serif;
@@ -278,6 +287,7 @@
   <div class="project-bar">
     <select id="projectSelect"></select>
     <button class="secondary" id="addProjectBtn"><span class="lock-icon">🔒</span>+ Add project</button>
+    <button class="secondary" id="historyBtn">Sales history</button>
   </div>
 
   <div class="stats" id="statsBar"></div>
@@ -343,6 +353,14 @@
     else if (parts.length === 2) raw = parts[0];
     const num = parseInt(raw, 10);
     return isNaN(num) ? null : num;
+  }
+
+  // If a unit code starts with a letter block (e.g. "A-39-01"), return that
+  // letter. Otherwise null — the project has no block distinction.
+  function getBlock(code) {
+    const parts = String(code).split('-');
+    if (parts.length >= 3 && /^[A-Za-z]+$/.test(parts[0])) return parts[0].toUpperCase();
+    return null;
   }
 
   function renderProjectSelect() {
@@ -420,11 +438,14 @@
     const counts = {};
     STATUS_ORDER.forEach(s => counts[s] = 0);
 
-    // Group units by floor so each floor renders as its own row/section.
-    const floorMap = new Map(); // floor number (or null for "Other") -> [{unit, idx}]
+    // Group units by block, then by floor within each block.
+    const blockMap = new Map(); // block letter (or null) -> Map(floor -> [{unit, idx}])
     currentUnits.forEach((unit, idx) => {
       counts[unit.status] = (counts[unit.status] || 0) + 1;
+      const block = getBlock(unit.code);
       const floor = getFloor(unit.code);
+      if (!blockMap.has(block)) blockMap.set(block, new Map());
+      const floorMap = blockMap.get(block);
       if (!floorMap.has(floor)) floorMap.set(floor, []);
       floorMap.get(floor).push({ unit, idx });
     });
@@ -436,42 +457,59 @@
       </div>
     `).join('');
 
-    const floors = Array.from(floorMap.keys()).sort((a, b) => {
+    const blocks = Array.from(blockMap.keys()).sort((a, b) => {
       if (a === null) return 1;
       if (b === null) return -1;
-      return b - a; // highest floor first
+      return a.localeCompare(b);
     });
 
     content.innerHTML = '';
-    floors.forEach(floor => {
-      const entries = floorMap.get(floor).sort((a, b) => a.unit.code.localeCompare(b.unit.code, undefined, { numeric: true }));
-      const section = document.createElement('div');
-      section.className = 'floor-section';
-      section.innerHTML = `<h2 class="floor-heading">${floor === null ? 'Other units' : 'Floor ' + floor}<span class="count">${entries.length} unit${entries.length === 1 ? '' : 's'}</span></h2>`;
+    blocks.forEach(block => {
+      const floorMap = blockMap.get(block);
+      const blockWrap = document.createElement('div');
+      blockWrap.className = 'block-section';
+      if (block !== null) {
+        blockWrap.innerHTML = `<h1 class="block-heading">Block ${block}</h1>`;
+      }
 
-      const grid = document.createElement('div');
-      grid.className = 'grid';
-
-      entries.forEach(({ unit, idx }) => {
-        const meta = STATUS_META[unit.status] || STATUS_META.available;
-        const btn = document.createElement('button');
-        btn.className = 'unit';
-        btn.style.setProperty('--stat-color', meta.color);
-        btn.style.setProperty('--stat-bg', meta.bg);
-        if (unit.status !== 'available') btn.classList.add('is-set');
-        const priceStr = fmtPrice(unit.price);
-        btn.innerHTML = `
-          <div class="code">${unit.code}</div>
-          ${priceStr ? `<div class="price">${priceStr}</div>` : ''}
-          <div class="status"><span class="dot"></span>${meta.label}</div>
-          ${unit.purchasers && unit.purchasers.length ? `<span class="buyer">${unit.purchasers[0].name}${unit.purchasers.length > 1 ? ' +' + (unit.purchasers.length - 1) : ''}</span>` : ''}
-        `;
-        btn.addEventListener('click', () => openUnitModal(idx));
-        grid.appendChild(btn);
+      const floors = Array.from(floorMap.keys()).sort((a, b) => {
+        if (a === null) return 1;
+        if (b === null) return -1;
+        return b - a; // highest floor first
       });
 
-      section.appendChild(grid);
-      content.appendChild(section);
+      floors.forEach(floor => {
+        const entries = floorMap.get(floor).sort((a, b) => a.unit.code.localeCompare(b.unit.code, undefined, { numeric: true }));
+        const section = document.createElement('div');
+        section.className = 'floor-section';
+        section.innerHTML = `<h2 class="floor-heading">${floor === null ? 'Other units' : 'Floor ' + floor}<span class="count">${entries.length} unit${entries.length === 1 ? '' : 's'}</span></h2>`;
+
+        const grid = document.createElement('div');
+        grid.className = 'grid';
+
+        entries.forEach(({ unit, idx }) => {
+          const meta = STATUS_META[unit.status] || STATUS_META.available;
+          const btn = document.createElement('button');
+          btn.className = 'unit';
+          btn.style.setProperty('--stat-color', meta.color);
+          btn.style.setProperty('--stat-bg', meta.bg);
+          if (unit.status !== 'available') btn.classList.add('is-set');
+          const priceStr = fmtPrice(unit.price);
+          btn.innerHTML = `
+            <div class="code">${unit.code}</div>
+            ${priceStr ? `<div class="price">${priceStr}</div>` : ''}
+            <div class="status"><span class="dot"></span>${meta.label}</div>
+            ${unit.purchasers && unit.purchasers.length ? `<span class="buyer">${unit.purchasers[0].name}${unit.purchasers.length > 1 ? ' +' + (unit.purchasers.length - 1) : ''}</span>` : ''}
+          `;
+          btn.addEventListener('click', () => openUnitModal(idx));
+          grid.appendChild(btn);
+        });
+
+        section.appendChild(grid);
+        blockWrap.appendChild(section);
+      });
+
+      content.appendChild(blockWrap);
     });
   }
 
@@ -527,12 +565,16 @@
           ${purchasersHTML}
           <div class="modal-actions">
             <button class="ghost" id="changeStatusBtn">Change status</button>
+            ${hasPurchasers ? `<button class="ghost" id="cancelBookingBtn">Cancel booking</button>` : ''}
             <button class="primary" id="closeBtn">Close</button>
           </div>
         </div>
       `;
       document.getElementById('closeBtn').addEventListener('click', closeModal);
       document.getElementById('changeStatusBtn').addEventListener('click', () => requireAdmin(() => openStatusModal(idx)));
+      if (hasPurchasers) {
+        document.getElementById('cancelBookingBtn').addEventListener('click', () => requireAdmin(() => openCancelModal(idx)));
+      }
       return;
     }
 
@@ -704,6 +746,60 @@
     });
   }
 
+  function openCancelModal(idx) {
+    const unit = currentUnits[idx];
+    overlay.classList.add('open');
+    modal.innerHTML = `
+      <h2>Cancel booking — ${unit.code}</h2>
+      <p class="modal-sub">This keeps a record of the current buyer for your sales report, then frees the unit for a new buyer.</p>
+      <p class="error-text" id="cancelError" style="display:none;"></p>
+      <form id="cancelForm">
+        <div class="field">
+          <label>Remark (reason for cancellation)</label>
+          <input id="f_remark" placeholder="e.g. Buyer withdrew, financing not approved" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="ghost" id="cancelBackBtn">Back</button>
+          <button type="submit" class="primary">Confirm cancellation</button>
+        </div>
+      </form>
+    `;
+    document.getElementById('cancelBackBtn').addEventListener('click', closeModal);
+    document.getElementById('cancelForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const remark = document.getElementById('f_remark').value;
+      try {
+        const { error: histErr } = await supabaseClient.from('booking_history').insert({
+          unit_id: unit.id,
+          project_id: currentProjectId,
+          unit_code: unit.code,
+          purchasers: unit.purchasers,
+          deposit: unit.deposit,
+          booking_date: unit.booking_date,
+          emergency_contact: unit.emergency_contact,
+          purchase_method: unit.purchase_method,
+          remark
+        });
+        if (histErr) throw new Error(histErr.message);
+
+        const { error: delErr } = await supabaseClient.from('purchasers').delete().eq('unit_id', unit.id);
+        if (delErr) throw new Error(delErr.message);
+
+        const { error: updErr } = await supabaseClient.from('units').update({
+          status: 'available', deposit: null, booking_date: null,
+          emergency_contact: null, purchase_method: null
+        }).eq('id', unit.id);
+        if (updErr) throw new Error(updErr.message);
+
+        closeModal();
+        await loadUnits();
+      } catch (err) {
+        document.getElementById('cancelError').style.display = 'block';
+        document.getElementById('cancelError').textContent = err.message;
+      }
+    });
+  }
+
   function requireAdmin(onSuccess) {
     if (isAdmin) { onSuccess(); return; }
     overlay.classList.add('open');
@@ -777,6 +873,37 @@
     return -1;
   }
 
+  // Turns a sheet name like "Block A" or "BLOCK-B" into just its letter/word,
+  // e.g. "A". Falls back to the raw sheet name if no clear block pattern is found.
+  function sheetNameToBlock(sheetName) {
+    const match = String(sheetName).match(/block\s*([a-z0-9]+)/i);
+    if (match) return match[1].toUpperCase();
+    return String(sheetName).trim();
+  }
+
+  function parseSheetUnits(rows) {
+    const headers = rows[0] || [];
+    const unitCol = findCol(headers, ['unit']);
+    const priceCol = findCol(headers, ['price']);
+    const sizeCol = findCol(headers, ['size', 'sq ft', 'sqft', 'area']);
+    const blockCol = findCol(headers, ['block']);
+
+    const units = [];
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      if (!row || row.length === 0) continue;
+      const code = unitCol >= 0 ? row[unitCol] : row[0];
+      if (!code) continue;
+      units.push({
+        code: String(code),
+        price: priceCol >= 0 ? row[priceCol] : (row[1] || null),
+        size: sizeCol >= 0 ? row[sizeCol] : null,
+        block: blockCol >= 0 ? row[blockCol] : null
+      });
+    }
+    return units;
+  }
+
   function handleAddProject(e) {
     e.preventDefault();
     const name = document.getElementById('newProjectName').value;
@@ -790,23 +917,36 @@
       try {
         const data = new Uint8Array(evt.target.result);
         const wb = XLSX.read(data, { type: 'array' });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        const headers = rows[0] || [];
-        const unitCol = findCol(headers, ['unit']);
-        const priceCol = findCol(headers, ['price']);
-        const sizeCol = findCol(headers, ['size', 'sq ft', 'sqft', 'area']);
 
-        units = [];
-        for (let r = 1; r < rows.length; r++) {
-          const row = rows[r];
-          if (!row || row.length === 0) continue;
-          const code = unitCol >= 0 ? row[unitCol] : row[0];
-          if (!code) continue;
-          units.push({
-            code: String(code),
-            price: priceCol >= 0 ? row[priceCol] : (row[1] || null),
-            size: sizeCol >= 0 ? row[sizeCol] : null
+        if (wb.SheetNames.length > 1) {
+          // Multiple sheets: treat each sheet as its own block, and make sure
+          // each unit's code is prefixed with that block letter (e.g. "A-39-01")
+          // so the board can group and display blocks correctly.
+          units = [];
+          wb.SheetNames.forEach(sheetName => {
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 });
+            const sheetUnits = parseSheetUnits(rows);
+            const block = sheetNameToBlock(sheetName);
+            sheetUnits.forEach(u => {
+              const alreadyPrefixed = new RegExp('^' + block + '-', 'i').test(u.code);
+              units.push({
+                code: alreadyPrefixed ? u.code : `${block}-${u.code}`,
+                price: u.price,
+                size: u.size
+              });
+            });
+          });
+        } else {
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+          const sheetUnits = parseSheetUnits(rows);
+          // Single sheet, but it may still have its own "Block" column per row.
+          units = sheetUnits.map(u => {
+            if (u.block) {
+              const block = String(u.block).trim().toUpperCase();
+              const alreadyPrefixed = new RegExp('^' + block + '-', 'i').test(u.code);
+              return { code: alreadyPrefixed ? u.code : `${block}-${u.code}`, price: u.price, size: u.size };
+            }
+            return { code: u.code, price: u.price, size: u.size };
           });
         }
       } catch (err) {
@@ -853,9 +993,50 @@
     modal.innerHTML = '';
   }
 
+  async function openHistoryModal() {
+    if (!currentProjectId) return;
+    overlay.classList.add('open');
+    modal.innerHTML = `<h2>Sales history</h2><p class="modal-sub">Loading…</p>`;
+
+    const { data, error } = await supabaseClient
+      .from('booking_history')
+      .select('*')
+      .eq('project_id', currentProjectId)
+      .order('recorded_at', { ascending: false });
+
+    if (error) {
+      modal.innerHTML = `<h2>Sales history</h2><p class="error-text">${error.message}</p><div class="modal-actions"><button class="primary" id="historyCloseBtn">Close</button></div>`;
+      document.getElementById('historyCloseBtn').addEventListener('click', closeModal);
+      return;
+    }
+
+    const rowsHTML = (data || []).map(h => {
+      const buyerName = h.purchasers && h.purchasers[0] ? h.purchasers[0].name : '—';
+      const when = h.recorded_at ? new Date(h.recorded_at).toLocaleDateString() : '';
+      return `
+        <div class="purchaser-block">
+          <div class="code" style="font-size:16px;">${h.unit_code}</div>
+          <p class="modal-sub" style="margin:4px 0;">Cancelled ${when} · was booked by ${buyerName}</p>
+          <p style="font-size:14px;margin:4px 0 0;">${h.remark || ''}</p>
+        </div>
+      `;
+    }).join('');
+
+    modal.innerHTML = `
+      <h2>Sales history</h2>
+      <p class="modal-sub">Cancelled bookings for this project, most recent first.</p>
+      ${data && data.length ? rowsHTML : '<p class="file-hint">No cancellations recorded yet.</p>'}
+      <div class="modal-actions">
+        <button class="primary" id="historyCloseBtn">Close</button>
+      </div>
+    `;
+    document.getElementById('historyCloseBtn').addEventListener('click', closeModal);
+  }
+
   overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
   projectSelect.addEventListener('change', e => { currentProjectId = e.target.value; loadUnits(); });
   document.getElementById('addProjectBtn').addEventListener('click', () => requireAdmin(openAddProjectModal));
+  document.getElementById('historyBtn').addEventListener('click', openHistoryModal);
 
   loadProjects();
 </script>
